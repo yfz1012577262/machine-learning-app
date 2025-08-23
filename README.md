@@ -10,7 +10,7 @@
 
    ```
    $ pip install -r requirements.txt
-   ```
+# Make sure the sclearn is installed and everythin else in the      requirment.txt
 
 2. Run the app
 

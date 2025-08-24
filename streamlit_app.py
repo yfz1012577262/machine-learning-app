@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-
+import altair as alt
 import sklearn
-
+import numpy as np
 st.title("Personal Machine Learninig app")
 
 st.caption("sth")
@@ -49,4 +49,30 @@ with st.expander('🎯 Features and Target'):
     st.write("### Target (zoning_classification)")
     st.write(y.value_counts().head(20))  # top 20 most common classes
 
+# Quick look at data distribution
+with st.expander('Scatterplot for zoninig type'):
+    
+    plot_df = df[["current_land_value","tax_levy","zoning_classification"]].dropna().copy()
+    plot_df["land_log"] = np.log1p(plot_df["current_land_value"])
+    plot_df["levy_log"] = np.log1p(plot_df["tax_levy"])
 
+    scatter = (
+        alt.Chart(plot_df)
+        .mark_circle(size=35, opacity=0.35)
+        .encode(
+            x=alt.X("land_log:Q", title="log1p(current_land_value)"),
+            y=alt.Y("levy_log:Q", title="log1p(tax_levy)"),
+            color=alt.Color("zoning_classification:N", legend=alt.Legend(columns=2)),
+            tooltip=[
+                alt.Tooltip("current_land_value:Q", format=",.0f"),
+                alt.Tooltip("tax_levy:Q", format=",.0f"),
+                "zoning_classification:N"
+         ],
+        )
+        .interactive()  # zoom & pan
+    )
+    st.altair_chart(scatter, use_container_width=True)
+
+# Data Preparation
+with st.sidebar:
+    st.header('Selected Input features')

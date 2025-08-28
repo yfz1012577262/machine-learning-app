@@ -76,3 +76,25 @@ with st.expander('Scatterplot for zoninig type'):
 # Data Preparation
 with st.sidebar:
     st.header('Selected Input features')
+with st.expander('🔧 Data Preprocessing'):
+    st.write("### Missing Values Analysis")
+    missing_info = X.isnull().sum()
+    missing_df = pd.DataFrame({
+        'Feature': missing_info.index,
+        'Missing Count': missing_info.values,
+        'Missing %': (missing_info.values / len(X) * 100).round(2)
+    })
+    st.dataframe(missing_df[missing_df['Missing Count'] > 0])
+    
+    # Remove rows with missing target
+    mask = ~y.isnull()
+    X = X[mask]
+    y = y[mask]
+    
+    # Simple train-test split
+    from sklearn.model_selection import train_test_split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+    st.write(f"Training set: {len(X_train)} samples")
+    st.write(f"Test set: {len(X_test)} samples")

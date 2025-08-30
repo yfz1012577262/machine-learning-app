@@ -95,6 +95,39 @@ with st.expander('Data Preprocessing'):
     
     # Simple train-test split
     from sklearn.model_selection import train_test_split
+
+    # Adding pipeline and separate numeric and categorical features
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler, OneHotEncoder
+    from sklearn.impute import SimpleImputer
+    from sklearn.compose import ColumnTransformer
+
+    numeric_features = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    categorical_features = X.select_dtypes(include=['object']).columns.tolist()
+
+    st.write(f"Numeric features: {numeric_features}")
+    st.write(f"Categorical features: {categorical_features}")
+
+    numeric_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='mean')),
+        ('scaler', StandardScaler())
+    ])
+
+    categorical_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+        ('onehot', OneHotEncoder(handle_unknown='ignore'))
+    ])
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', numeric_transformer, numeric_features),
+            ('cat', categorical_transformer, categorical_features)
+        ]
+    )
+    
+
+
+    # Split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, random_state=42
     )
@@ -102,23 +135,24 @@ with st.expander('Data Preprocessing'):
     st.write(f"Training set: {len(X_train)} samples")
     st.write(f"Test set: {len(X_test)} samples")
 
-with st.expander('Model Training v1'):
+with st.expander('Model Training v2 with the Preprocessing pipeline'):
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.metrics import accuracy_score
 
-    le = LabelEncoder()
-    X_train_encoded = X_train.select_dtypes(include=['number'])
-    X_test_encoded = X_test.select_dtypes(include=['number'])
+    # Preprocess the data
 
-    if st.button('Train Model'):
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
-        model.fit(X_train_encoded, y_train)
-        y_pred = model.predict(X_test_encoded)
+    if st.button('Train Model with Pipeline'):
+        Pipeline_rf=Pipeline(steps=[('preprocessor', preprocessor),
+                                     ('classifier', RandomForestClassifier(n_estimators=100, random_state=42))])
+        Pipeline_rf.fit(X_train, y_train)
+        
+        y_pred = Pipeline_rf.predict(X_test)
+        
         accuracy = accuracy_score(y_test, y_pred)
-        st.write(f"Model Accuracy: {accuracy:.3%}")
+        st.success(f"Model Accuracy: {accuracy:.3%}")
         st.write("### Sample Predictions")
         sample_results = pd.DataFrame({
-            'Actual': y_test,
-            'Predicted': y_pred
-        }).sample(n=min(20, len(y_test)), random_state=42)
+            'Actual': y_test.iloc[:20],
+            'Predicted': y_pred[:20]
+        })
         st.dataframe(sample_results)

@@ -1,8 +1,10 @@
+from sklearn.calibration import LabelEncoder
 import streamlit as st
 import pandas as pd
 import altair as alt
 import sklearn
 import numpy as np
+from sklearn import preprocessing
 st.title("Personal Machine Learninig app")
 
 st.caption("sth")
@@ -42,16 +44,16 @@ useful_features = [
 X = df[useful_features].copy()
 y = df[target].copy()
 
-with st.expander('🎯 Features and Target'):
-    st.write("### Features selected for prediction")
+with st.expander('Features and Target'):
+    st.write("## Features selected for prediction")
     st.dataframe(X.sample(n=min(20, len(X)), random_state=42))
 
     st.write("### Target (zoning_classification)")
-    st.write(y.value_counts().head(20))  # top 20 most common classes
+    st.write(y.value_counts().head(30))  # top 30 most common classes
 
 # Quick look at data distribution
-with st.expander('Scatterplot for zoninig type'):
-    
+with st.expander('Scatterplot for zoning type'):
+
     plot_df = df[["current_land_value","tax_levy","zoning_classification"]].dropna().copy()
     plot_df["land_log"] = np.log1p(plot_df["current_land_value"])
     plot_df["levy_log"] = np.log1p(plot_df["tax_levy"])
@@ -76,7 +78,7 @@ with st.expander('Scatterplot for zoninig type'):
 # Data Preparation
 with st.sidebar:
     st.header('Selected Input features')
-with st.expander('🔧 Data Preprocessing'):
+with st.expander('Data Preprocessing'):
     st.write("### Missing Values Analysis")
     missing_info = X.isnull().sum()
     missing_df = pd.DataFrame({
@@ -85,7 +87,7 @@ with st.expander('🔧 Data Preprocessing'):
         'Missing %': (missing_info.values / len(X) * 100).round(2)
     })
     st.dataframe(missing_df[missing_df['Missing Count'] > 0])
-    
+
     # Remove rows with missing target
     mask = ~y.isnull()
     X = X[mask]
@@ -94,7 +96,29 @@ with st.expander('🔧 Data Preprocessing'):
     # Simple train-test split
     from sklearn.model_selection import train_test_split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.3, random_state=42
     )
+    st.write(f"acceptable missing%")
     st.write(f"Training set: {len(X_train)} samples")
     st.write(f"Test set: {len(X_test)} samples")
+
+with st.expander('Model Training v1'):
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import accuracy_score
+
+    le = LabelEncoder()
+    X_train_encoded = X_train.select_dtypes(include=['number'])
+    X_test_encoded = X_test.select_dtypes(include=['number'])
+
+    if st.button('Train Model'):
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train_encoded, y_train)
+        y_pred = model.predict(X_test_encoded)
+        accuracy = accuracy_score(y_test, y_pred)
+        st.write(f"Model Accuracy: {accuracy:.3%}")
+        st.write("### Sample Predictions")
+        sample_results = pd.DataFrame({
+            'Actual': y_test,
+            'Predicted': y_pred
+        }).sample(n=min(20, len(y_test)), random_state=42)
+        st.dataframe(sample_results)

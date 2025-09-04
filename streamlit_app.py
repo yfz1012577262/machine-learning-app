@@ -150,16 +150,6 @@ with st.expander('Model Training v3 with the Multiple Models for Comparison '):
         "Decision Tree": DecisionTreeClassifier(random_state=42)
     }
 
-    
-    # Model Selection
-
-    models= {
-        "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
-        "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42),
-        "Logistic Regression": LogisticRegression(max_iter=200, random_state=42),
-        "Decision Tree": DecisionTreeClassifier(random_state=42)
-    } # all default models
-
     # Model comparison
     selected_model = st.multiselect(
         "Select models to compare",

@@ -135,24 +135,89 @@ with st.expander('Data Preprocessing'):
     st.write(f"Training set: {len(X_train)} samples")
     st.write(f"Test set: {len(X_test)} samples")
 
-with st.expander('Model Training v2 with the Preprocessing pipeline'):
-    from sklearn.ensemble import RandomForestClassifier
+with st.expander('Model Training v3 with the Multiple Models for Comparison '):
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.tree import DecisionTreeClassifier
     from sklearn.metrics import accuracy_score
 
-    # Preprocess the data
 
-    if st.button('Train Model with Pipeline'):
-        Pipeline_rf=Pipeline(steps=[('preprocessor', preprocessor),
-                                     ('classifier', RandomForestClassifier(n_estimators=100, random_state=42))])
-        Pipeline_rf.fit(X_train, y_train)
+    # Define models to compare
+    models = {
+        "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+        "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42),
+        "Logistic Regression": LogisticRegression(max_iter=200, random_state=42),
+        "Decision Tree": DecisionTreeClassifier(random_state=42)
+    }
+
+    
+    # Model Selection
+
+    models= {
+        "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+        "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42),
+        "Logistic Regression": LogisticRegression(max_iter=200, random_state=42),
+        "Decision Tree": DecisionTreeClassifier(random_state=42)
+    } # all default models
+
+    # Model comparison
+    selected_model = st.multiselect(
+        "Select models to compare",
+        options=list(models.keys()),
+        default=["Random Forest"]
+    )
+
+    if st.button("Train and Compare Models"):
+        if len(selected_model) == 0:
+            st.warning("Please select at least one model.")
         
-        y_pred = Pipeline_rf.predict(X_test)
-        
-        accuracy = accuracy_score(y_test, y_pred)
-        st.success(f"Model Accuracy: {accuracy:.3%}")
-        st.write("### Sample Predictions")
-        sample_results = pd.DataFrame({
-            'Actual': y_test.iloc[:20],
-            'Predicted': y_pred[:20]
-        })
-        st.dataframe(sample_results)
+        else:
+            results = {}
+            progress_bar = st.progress(0)
+
+            for i, model_name in enumerate(selected_model):
+
+                progress_bar.progress((i + 1) / len(selected_model))
+                st.write(f"### Training {model_name}...System is working...")
+
+                # Create pipeline for each model
+                pipeline = Pipeline(steps=[
+                    ('preprocessor', preprocessor),
+                    ('classifier', models[model_name])
+                ])
+
+                # Train the model
+                pipeline.fit(X_train, y_train)
+
+                # Evaluate the model
+                y_pred = pipeline.predict(X_test)
+                accuracy = accuracy_score(y_test, y_pred)
+                results[model_name] = accuracy
+
+            st.success("Training completed!")
+
+            # Datadframe for comparison of models
+            results_df = pd.DataFrame(list(results.items()), columns=['Model', 'Accuracy']).sort_values(by='Accuracy', ascending=False)
+            
+            # Display results
+            st.write("## Model Performance Comparison Results")
+            st.dataframe(results_df.style.format({"Accuracy": "{:.4%}"}))
+
+            # Best model
+            best_model_name = results_df.iloc[0]['Model']
+            best_model_accuracy = results_df.iloc[0]['Accuracy']
+            st.write(f"### Best Model: {best_model_name} with Accuracy: {best_model_accuracy:.4%}")
+
+            # Bar chart for comparison
+            Bar_chart = alt.Chart(results_df).mark_bar().encode(
+                x=alt.X('Accuracy:Q', scale=alt.Scale(domain=[0, 1]), title='Accuracy'),
+                y=alt.Y('Model:N', sort='-x', title='Model'),
+                color=alt.Color('Accuracy:Q', scale=alt.Scale(scheme='blues'), legend=None),
+                tooltip=['Model', alt.Tooltip('Accuracy:Q', format='.4%')]).properties(
+                title='Model Accuracy Comparison',
+                width=700,
+                height=400
+                )
+            st.altair_chart(Bar_chart, use_container_width=True)
+
+            progress_bar.empty()

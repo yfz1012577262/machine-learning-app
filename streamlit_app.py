@@ -68,22 +68,43 @@ with tb1:
 
 with tb2:
     with st.expander('Scatterplot for zoning type'):
-        plot_df = df[["current_land_value","tax_levy","zoning_classification"]].dropna().copy()
-        plot_df["land_log"] = np.log1p(plot_df["current_land_value"])
-        plot_df["levy_log"] = np.log1p(plot_df["tax_levy"])
-
+        # Sample the data BEFORE processing to reduce memory usage
+        sample_size = st.slider("Sample size for plot", 100, 5000, 1000)
+        
+        # Get only the columns we need and sample first
+        plot_cols = ["current_land_value", "tax_levy", "zoning_classification"]
+        temp_df = df[plot_cols].dropna()
+        
+        # Sample the data
+        if len(temp_df) > sample_size:
+            plot_df = temp_df.sample(n=sample_size, random_state=42).copy()
+            st.caption(f"Showing {sample_size} of {len(temp_df)} data points for performance")
+        else:
+            plot_df = temp_df.copy()
+            st.caption(f"Showing all {len(plot_df)} data points")
+        
+        # Apply transformations only to sampled data
+        plot_df["land_log"] = np.log1p(plot_df["current_land_value"].clip(lower=0))
+        plot_df["levy_log"] = np.log1p(plot_df["tax_levy"].clip(lower=0))
+        
+        # Only show top zoning classes to reduce legend size
+        top_zones = plot_df['zoning_classification'].value_counts().head(10).index
+        plot_df_filtered = plot_df[plot_df['zoning_classification'].isin(top_zones)]
+        
+        # Create simplified chart
         scatter = (
-            alt.Chart(plot_df)
-            .mark_circle(size=35, opacity=0.35)
+            alt.Chart(plot_df_filtered)
+            .mark_circle(size=30, opacity=0.5)  # Smaller circles, more opacity
             .encode(
-                x=alt.X("land_log:Q", title="log1p(current_land_value)"),
-                y=alt.Y("levy_log:Q", title="log1p(tax_levy)"),
-                color=alt.Color("zoning_classification:N", legend=alt.Legend(columns=2)),
-                tooltip=[
-                    alt.Tooltip("current_land_value:Q", format=",.0f"),
-                    alt.Tooltip("tax_levy:Q", format=",.0f"),
-                    "zoning_classification:N"
-                ],
+                x=alt.X("land_log:Q", title="log(Land Value)"),
+                y=alt.Y("levy_log:Q", title="log(Tax Levy)"),
+                color=alt.Color("zoning_classification:N", 
+                              legend=alt.Legend(columns=1, symbolLimit=10)),
+                tooltip=["zoning_classification:N"]  # Simplified tooltip
+            )
+            .properties(
+                width=600,  # Fixed width
+                height=400  # Fixed height
             )
             .interactive()
         )

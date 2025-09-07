@@ -125,45 +125,39 @@ with tb1:
             st.caption(f"(Showing top 30 of {len(vc)} classes)")
 
 # TAB 2: EDA & PREPROCESSING
+# TAB 2: EDA & PREPROCESSING
 with tb2:
     with st.expander('Scatterplot for zoning type'):
-        plot_df = df[["current_land_value","tax_levy","zoning_classification"]].dropna().sample(
-            n=min(20_000, len(df)), random_state=42
-        ).copy()
-        plot_df["land_log"] = np.log1p(plot_df["current_land_value"].clip(lower=0))
-        plot_df["levy_log"] = np.log1p(plot_df["tax_levy"].clip(lower=0))
-        alt.data_transformers.disable_max_rows()
-        scatter = (
-            alt.Chart(plot_df)
-            .mark_circle(size=35, opacity=0.35)
-            .encode(
-                x=alt.X("land_log:Q", title="log1p(current_land_value)"),
-                y=alt.Y("levy_log:Q", title="log1p(tax_levy)"),
-                color=alt.Color("zoning_classification:N", legend=alt.Legend(columns=2)),
-                tooltip=[
-                    alt.Tooltip("current_land_value:Q", format=",.0f"),
-                    alt.Tooltip("tax_levy:Q", format=",.0f"),
-                    "zoning_classification:N"
-                ],
+        # First drop NA, then sample from what's left
+        temp_df = df[["current_land_value","tax_levy","zoning_classification"]].dropna()
+        
+        # Sample up to 20k rows, but not more than what we have
+        sample_size = min(20_000, len(temp_df))
+        
+        if sample_size > 0:
+            plot_df = temp_df.sample(n=sample_size, random_state=42).copy()
+            plot_df["land_log"] = np.log1p(plot_df["current_land_value"].clip(lower=0))
+            plot_df["levy_log"] = np.log1p(plot_df["tax_levy"].clip(lower=0))
+            
+            alt.data_transformers.disable_max_rows()
+            scatter = (
+                alt.Chart(plot_df)
+                .mark_circle(size=35, opacity=0.35)
+                .encode(
+                    x=alt.X("land_log:Q", title="log1p(current_land_value)"),
+                    y=alt.Y("levy_log:Q", title="log1p(tax_levy)"),
+                    color=alt.Color("zoning_classification:N", legend=alt.Legend(columns=2)),
+                    tooltip=[
+                        alt.Tooltip("current_land_value:Q", format=",.0f"),
+                        alt.Tooltip("tax_levy:Q", format=",.0f"),
+                        "zoning_classification:N"
+                    ],
+                )
+                .interactive()
             )
-            .interactive()
-        )
-        st.altair_chart(scatter, use_container_width=True)
-
-    with st.expander('Data Preprocessing Info'):
-        st.write("### Missing Values Analysis")
-        missing_info = X.isnull().sum()
-        missing_df = pd.DataFrame({
-            'Feature': missing_info.index,
-            'Missing Count': missing_info.values,
-            'Missing %': (missing_info.values / len(X) * 100).round(2)
-        })
-        st.dataframe(missing_df[missing_df['Missing Count'] > 0])
-        st.write(f"Numeric features: {numeric_features}")
-        st.write(f"Categorical features: {categorical_features}")
-        st.write(f"Training set: {len(X_train)} samples")
-        st.write(f"Test set: {len(X_test)} samples")
-
+            st.altair_chart(scatter, use_container_width=True)
+        else:
+            st.warning("Not enough data points after removing missing values for visualization")
 # TAB 3: MODEL TRAINING
 with tb3:
     with st.expander('Model Training v3 with Multiple Models for Comparison'):

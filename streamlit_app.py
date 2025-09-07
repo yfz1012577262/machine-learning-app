@@ -172,23 +172,19 @@ with tb3:
 
                 for i, model_name in enumerate(selected_model):
                     progress_bar.progress((i + 1) / len(selected_model))
-                    st.write(f"### Training {model_name}...System is working...")
+                    with st.spinner(f"Training {model_name}..."):
+                        Pipeline_model = Pipeline(steps=[
+                            ('preprocessor', preprocessor),
+                            ('classifier', models[model_name])
+                        ])
+                        Pipeline_model.fit(X_train, y_train)
+                        y_pred = Pipeline_model.predict(X_test)
+                        accuracy = accuracy_score(y_test, y_pred)
+                        results[model_name] = accuracy
 
-                    # Create pipeline for each model
-                    pipeline = Pipeline(steps=[
-                        ('preprocessor', preprocessor),
-                        ('classifier', models[model_name])
-                    ])
+                    st.success(f"{model_name} trained with accuracy: {accuracy:.4%}")
 
-                    # Train the model
-                    pipeline.fit(X_train, y_train)
-
-                    # Evaluate the model
-                    y_pred = pipeline.predict(X_test)
-                    accuracy = accuracy_score(y_test, y_pred)
-                    results[model_name] = accuracy
-
-                st.success("Training completed!")
+                st.write("### Training Completed")
                 progress_bar.empty()
                 
                 # Store results in session state

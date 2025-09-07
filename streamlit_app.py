@@ -1,12 +1,11 @@
-from sklearn.calibration import LabelEncoder
 import streamlit as st
 import pandas as pd
 import altair as alt
-import sklearn
 import numpy as np
 from sklearn import preprocessing
+from sklearn.calibration import LabelEncoder
 
-#Tab and page config
+# Page config
 st.set_page_config(
     page_title="Vancouver Property ML Zoning Classifier App",
     page_icon="🏠",
@@ -42,10 +41,50 @@ useful_features = [
 X = df[useful_features].copy()
 y = df[target].copy()
 
+# PREPROCESSING - MOVED OUTSIDE TABS TO FIX SCOPE ISSUE
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+
+# Remove rows with missing target
+mask = ~y.isnull()
+X = X[mask]
+y = y[mask]
+
+# Define features
+numeric_features = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
+categorical_features = X.select_dtypes(include=['object']).columns.tolist()
+
+# Create preprocessor
+numeric_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='mean')),
+    ('scaler', StandardScaler())
+])
+
+categorical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transformer, numeric_features),
+        ('cat', categorical_transformer, categorical_features)
+    ]
+)
+
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, random_state=42
+)
+
 # Initialize session state for results
 if 'results' not in st.session_state:
     st.session_state.results = None
 
+# Create tabs
 tb1, tb2, tb3, tb4 = st.tabs([
     "Data Overview",
     "EDA & Preprocessing",
@@ -53,6 +92,7 @@ tb1, tb2, tb3, tb4 = st.tabs([
     "Evaluation & Comparison"
 ])
 
+# TAB 1: DATA OVERVIEW
 with tb1:
     with st.expander('📂 Raw Data Preview'):
         st.write("### Raw Input Data")
@@ -66,6 +106,7 @@ with tb1:
         st.write("### Target (zoning_classification)")
         st.write(y.value_counts().head(30))
 
+# TAB 2: EDA & PREPROCESSING
 with tb2:
     with st.expander('Scatterplot for zoning type'):
         plot_df = df[["current_land_value","tax_levy","zoning_classification"]].dropna().copy()
@@ -89,7 +130,7 @@ with tb2:
         )
         st.altair_chart(scatter, use_container_width=True)
 
-    with st.expander('Data Preprocessing'):
+    with st.expander('Data Preprocessing Info'):
         st.write("### Missing Values Analysis")
         missing_info = X.isnull().sum()
         missing_df = pd.DataFrame({
@@ -98,55 +139,20 @@ with tb2:
             'Missing %': (missing_info.values / len(X) * 100).round(2)
         })
         st.dataframe(missing_df[missing_df['Missing Count'] > 0])
-
-        # Remove rows with missing target
-        mask = ~y.isnull()
-        X = X[mask]
-        y = y[mask]
         
-        from sklearn.model_selection import train_test_split
-        from sklearn.pipeline import Pipeline
-        from sklearn.preprocessing import StandardScaler, OneHotEncoder
-        from sklearn.impute import SimpleImputer
-        from sklearn.compose import ColumnTransformer
-
-        numeric_features = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
-        categorical_features = X.select_dtypes(include=['object']).columns.tolist()
-
         st.write(f"Numeric features: {numeric_features}")
         st.write(f"Categorical features: {categorical_features}")
-
-        numeric_transformer = Pipeline(steps=[
-            ('imputer', SimpleImputer(strategy='mean')),
-            ('scaler', StandardScaler())
-        ])
-
-        categorical_transformer = Pipeline(steps=[
-            ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
-            ('onehot', OneHotEncoder(handle_unknown='ignore'))
-        ])
-
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ('num', numeric_transformer, numeric_features),
-                ('cat', categorical_transformer, categorical_features)
-            ]
-        )
-
-        # Split
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.3, random_state=42
-        )
-        st.write(f"acceptable missing%")
         st.write(f"Training set: {len(X_train)} samples")
         st.write(f"Test set: {len(X_test)} samples")
 
+# TAB 3: MODEL TRAINING
 with tb3:
-    with st.expander('Model Training v3 with the Multiple Models for Comparison'):
+    with st.expander('Model Training v3 with Multiple Models for Comparison'):
         from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
         from sklearn.linear_model import LogisticRegression
         from sklearn.tree import DecisionTreeClassifier
         from sklearn.metrics import accuracy_score
+        import time
 
         # Define models to compare
         models = {
@@ -156,7 +162,7 @@ with tb3:
             "Decision Tree": DecisionTreeClassifier(random_state=42)
         }
 
-        # Model comparison
+        # Model selection
         selected_model = st.multiselect(
             "Select models to compare",
             options=list(models.keys()),
@@ -172,24 +178,33 @@ with tb3:
 
                 for i, model_name in enumerate(selected_model):
                     progress_bar.progress((i + 1) / len(selected_model))
-                    with st.spinner(f"Training {model_name}..."):
-                        Pipeline_model = Pipeline(steps=[
+                    
+                    # Dynamic training message with spinner
+                    with st.spinner(f'Training {model_name}...'):
+                        # Create pipeline for each model
+                        pipeline = Pipeline(steps=[
                             ('preprocessor', preprocessor),
                             ('classifier', models[model_name])
                         ])
-                        Pipeline_model.fit(X_train, y_train)
-                        y_pred = Pipeline_model.predict(X_test)
+
+                        # Train the model
+                        pipeline.fit(X_train, y_train)
+
+                        # Evaluate the model
+                        y_pred = pipeline.predict(X_test)
                         accuracy = accuracy_score(y_test, y_pred)
                         results[model_name] = accuracy
+                    
+                    # Show completion for each model
+                    st.success(f"✅ {model_name} complete: {accuracy:.2%} accuracy")
 
-                    st.success(f"{model_name} trained with accuracy: {accuracy:.4%}")
-
-                st.write("### Training Completed")
+                st.success("All models trained successfully!")
                 progress_bar.empty()
                 
                 # Store results in session state
                 st.session_state.results = results
 
+# TAB 4: EVALUATION & COMPARISON
 with tb4:
     st.write("## Evaluation & Comparison")
     
@@ -197,7 +212,8 @@ with tb4:
         results = st.session_state.results
         
         # Dataframe for comparison of models
-        results_df = pd.DataFrame(list(results.items()), columns=['Model', 'Accuracy']).sort_values(by='Accuracy', ascending=False)
+        results_df = pd.DataFrame(list(results.items()), columns=['Model', 'Accuracy'])
+        results_df = results_df.sort_values(by='Accuracy', ascending=False)
         
         # Display results
         st.write("### Model Performance Comparison Results")
@@ -206,7 +222,7 @@ with tb4:
         # Best model
         best_model_name = results_df.iloc[0]['Model']
         best_model_accuracy = results_df.iloc[0]['Accuracy']
-        st.write(f"### Best Model: {best_model_name} with Accuracy: {best_model_accuracy:.4%}")
+        st.write(f"### 🏆 Best Model: {best_model_name} with Accuracy: {best_model_accuracy:.4%}")
 
         # Bar chart for comparison
         Bar_chart = alt.Chart(results_df).mark_bar().encode(
@@ -221,8 +237,17 @@ with tb4:
         )
         st.altair_chart(Bar_chart, use_container_width=True)
     else:
-        st.info("Please train models in the 'Model Training' tab first to see results here.")
+        st.info("📊 Please train models in the 'Model Training' tab first to see results here.")
 
 # Sidebar
 with st.sidebar:
-    st.header('Selected Input features')
+    st.header('ℹ️ App Information')
+    st.write("**Dataset Info:**")
+    st.write(f"• Total samples: {len(df)}")
+    st.write(f"• Features used: {len(useful_features)}")
+    st.write(f"• Target classes: {y.nunique()}")
+    st.write("---")
+    st.write("**Current Split:**")
+    st.write(f"• Training: {len(X_train)} samples")
+    st.write(f"• Testing: {len(X_test)} samples")
+    st.write(f"• Test ratio: 30%")

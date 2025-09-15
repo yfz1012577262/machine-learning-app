@@ -1,4 +1,4 @@
-from sklearn.calibration import LabelEncoder
+from sklearn.preprocessing import LabelEncoder
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -17,8 +17,16 @@ st.set_page_config(
 st.title("🏠 Vancouver Property Zoning Classification")
 st.markdown("---")
 
-# Load data
-df = pd.read_csv("rawdata.csv", sep=';')
+# Load data/cache data
+@st.cache_data
+def load_data(file_path):
+    data = pd.read_csv(file_path, sep=';')
+    return data
+
+try:
+    df = load_data('rawdata.csv')
+except Exception as e:
+    st.error(f"Error loading data: {e}")
 
 # Target column
 target = "zoning_classification"
@@ -168,37 +176,118 @@ with tb3:
         from sklearn.linear_model import LogisticRegression
         from sklearn.tree import DecisionTreeClassifier
         from sklearn.metrics import accuracy_score
+        from sklearn.pipeline import Pipeline
 
-        # Define models to compare
-        models = {
-            "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
-            "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42),
-            "Logistic Regression": LogisticRegression(max_iter=200, random_state=42),
-            "Decision Tree": DecisionTreeClassifier(random_state=42)
-        }
+        # 0) Speed / compute controls
+        st.write("#### Speed / compute controls")
+        col_speed1, col_speed2 = st.columns(2)
+        with col_speed1:
+            subsample_frac = st.slider(
+                "Training subsample fraction", min_value=0.10, max_value=1.00,
+                value=1.00, step=0.05
+            )
+        with col_speed2:
+            rf_cores = st.slider("RandomForest cores (n_jobs)", 1, 4, 1, 1)
 
-        # Model comparison
+        # 1) Choose which algorithms to train
+        algo_options = ["Random Forest", "Gradient Boosting", "Logistic Regression", "Decision Tree"]
         selected_model = st.multiselect(
             "Select models to compare",
-            options=list(models.keys()),
+            options=algo_options,
             default=["Random Forest"]
         )
 
+        # 2) Show hyperparameters ONLY for selected algorithms (numeric controls as sliders)
+        c1, c2 = st.columns(2)
+
+        # -Random Forest (constrained) 
+        if "Random Forest" in selected_model:
+            with c1:
+                st.markdown("**Random Forest**")
+                rf_n_estimators = st.slider("RF n_estimators", 50, 300, 120, 10, key="rf_n")
+                rf_use_max_depth = st.checkbox("RF use max_depth", value=True, key="rf_use_md")
+                rf_max_depth = st.slider("RF max_depth", 3, 30, 12, 1, key="rf_md") if rf_use_max_depth else None
+                rf_max_features = st.selectbox("RF max_features", ["sqrt", "log2"], index=0, key="rf_mf")
+
+        # Gradient Boosting (constrained)
+        if "Gradient Boosting" in selected_model:
+            with c1:
+                st.markdown("**Gradient Boosting**")
+                gb_n_estimators = st.slider("GB n_estimators", 50, 300, 100, 10, key="gb_n")
+                gb_learning_rate = st.slider("GB learning_rate", 0.01, 0.5, 0.10, 0.01, key="gb_lr")
+                gb_use_max_depth = st.checkbox("GB use max_depth", value=True, key="gb_use_md")
+                gb_max_depth = st.slider("GB max_depth", 2, 6, 3, 1, key="gb_md") if gb_use_max_depth else None
+                gb_early_stop = st.checkbox("GB early stopping", value=True, key="gb_es")
+
+        # Logistic Regression (constrained)
+        if "Logistic Regression" in selected_model:
+            with c2:
+                st.markdown("**Logistic Regression**")
+                lr_C = st.slider("LR C", 0.01, 10.0, 1.0, 0.01, key="lr_c")
+                lr_max_iter = st.slider("LR max_iter", 100, 500, 200, 50, key="lr_mi")
+                lr_solver = st.selectbox("LR solver", ["lbfgs", "liblinear", "saga"], index=0, key="lr_sol")
+
+        #  Decision Tree (constrained) 
+        if "Decision Tree" in selected_model:
+            with c2:
+                st.markdown("**Decision Tree**")
+                dt_use_max_depth = st.checkbox("DT use max_depth", value=True, key="dt_use_md")
+                dt_max_depth = st.slider("DT max_depth", 3, 40, 12, 1, key="dt_md") if dt_use_max_depth else None
+                dt_min_samples_split = st.slider("DT min_samples_split", 2, 50, 10, 1, key="dt_mss")
+
+        # 3) Build models dict using only selected algorithms (with tuned params)
+        models = {}
+
+        if "Random Forest" in selected_model:
+            rf_kwargs = {"n_estimators": int(rf_n_estimators), "random_state": 42, "n_jobs": int(rf_cores)}
+            if rf_use_max_depth:
+                rf_kwargs["max_depth"] = int(rf_max_depth)
+            rf_kwargs["max_features"] = rf_max_features
+            models["Random Forest"] = RandomForestClassifier(**rf_kwargs)
+
+        if "Gradient Boosting" in selected_model:
+            gb_kwargs = {"n_estimators": int(gb_n_estimators), "learning_rate": float(gb_learning_rate), "random_state": 42}
+            if gb_use_max_depth:
+                gb_kwargs["max_depth"] = int(gb_max_depth)
+            if gb_early_stop:
+                gb_kwargs.update({"n_iter_no_change": 5, "validation_fraction": 0.1})
+            models["Gradient Boosting"] = GradientBoostingClassifier(**gb_kwargs)
+
+        if "Logistic Regression" in selected_model:
+            models["Logistic Regression"] = LogisticRegression(
+                C=float(lr_C), max_iter=int(lr_max_iter), solver=lr_solver, random_state=42
+            )
+
+        if "Decision Tree" in selected_model:
+            dt_kwargs = {"random_state": 42, "min_samples_split": int(dt_min_samples_split)}
+            if dt_use_max_depth:
+                dt_kwargs["max_depth"] = int(dt_max_depth)
+            models["Decision Tree"] = DecisionTreeClassifier(**dt_kwargs)
+
+        # 4) Train & compare (unchanged flow, with optional subsample)
         if st.button("Train and Compare Models"):
-            if len(selected_model) == 0:
+            if len(models) == 0:
                 st.warning("Please select at least one model.")
             else:
                 results = {}
                 progress_bar = st.progress(0)
 
-                for i, model_name in enumerate(selected_model):
-                    progress_bar.progress((i + 1) / len(selected_model))
+                # Optional subsample for speed
+                if subsample_frac < 1.0:
+                    # use a consistent random_state for repeatability
+                    X_train_use = X_train.sample(frac=subsample_frac, random_state=42)
+                    y_train_use = y_train.loc[X_train_use.index]
+                else:
+                    X_train_use, y_train_use = X_train, y_train
+
+                for i, model_name in enumerate(models.keys()):
+                    progress_bar.progress((i + 1) / max(1, len(models)))
                     with st.spinner(f"Training {model_name}..."):
                         Pipeline_model = Pipeline(steps=[
                             ('preprocessor', preprocessor),
                             ('classifier', models[model_name])
                         ])
-                        Pipeline_model.fit(X_train, y_train)
+                        Pipeline_model.fit(X_train_use, y_train_use)
                         y_pred = Pipeline_model.predict(X_test)
                         accuracy = accuracy_score(y_test, y_pred)
                         results[model_name] = accuracy
@@ -207,9 +296,9 @@ with tb3:
 
                 st.write("### Training Completed")
                 progress_bar.empty()
-                
-                # Store results in session state
                 st.session_state.results = results
+
+
 
 with tb4:
     st.write("## Evaluation & Comparison")
